@@ -3,8 +3,9 @@ import { useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 
-// Cap max rendered voxels to keep GPU frame time under budget
-const MAX_VOXELS = 2400;
+// Ultra-optimized voxel budget for smooth 60fps
+const MAX_VOXELS = 1800;
+const QUALITY_THRESHOLD = 32;
 
 function MedicalMesh({
   active,
@@ -38,11 +39,8 @@ function MedicalMesh({
   }, [dynamicQuality, qualityScale]);
 
   const starsCount = useMemo(() => {
-    if (dynamicQuality === 'low') {
-      return Math.max(80, Math.floor(180 * qualityScale));
-    }
-    return Math.max(160, Math.floor(320 * qualityScale));
-  }, [dynamicQuality, qualityScale]);
+    return dynamicQuality === 'low' ? 60 : 100;
+  }, [dynamicQuality]);
 
   const themePalette = useMemo(() => {
     if (severityTheme === 'critical') {
@@ -185,10 +183,10 @@ function MedicalMesh({
     // Update quality every ~2 seconds based on measured FPS.
     fpsProbeRef.current.frameCount += 1;
     fpsProbeRef.current.deltaSum += state.clock.getDelta();
-    if (fpsProbeRef.current.frameCount >= 120) {
+    if (fpsProbeRef.current.frameCount >= 60) {
       const avgDelta = fpsProbeRef.current.deltaSum / fpsProbeRef.current.frameCount;
       const approxFps = avgDelta > 0 ? 1 / avgDelta : 60;
-      const nextQuality = approxFps < 28 ? 'low' : 'normal';
+      const nextQuality = approxFps < QUALITY_THRESHOLD ? 'low' : 'normal';
       if (nextQuality !== dynamicQuality) {
         setDynamicQuality(nextQuality);
       }
@@ -220,25 +218,25 @@ function MedicalMesh({
         minDistance={focusMode ? 1.5 : 2}
       />
 
-      {/* Reduced star count – was 2400; fade removed (triggers extra shader pass) */}
-      <Stars radius={80} depth={30} count={starsCount} factor={4} saturation={0} speed={0.8} />
+      {/* Minimal stars, zero motion */}
+      <Stars radius={80} depth={30} count={starsCount} factor={2} saturation={0} speed={0} />
 
-      {/* Single directional light instead of spotLight + pointLight */}
-      <ambientLight intensity={0.56} color={themePalette.ambient} />
-      <directionalLight position={[10, 10, 10]} intensity={1.5} color={themePalette.key} />
-      <directionalLight position={[-8, -5, 4]} intensity={0.45} color={themePalette.fill} />
+      {/* Single pass lighting */}
+      <ambientLight intensity={0.72} color={themePalette.ambient} />
+      <directionalLight position={[8, 8, 8]} intensity={1.0} color={themePalette.key} castShadow={false} />
 
       <group ref={groupRef}>
 
-        {/* Ghost anatomical shell – segments dropped 64→24 (4096→576 verts) */}
+        {/* Ultra-light shell: 16 segments = 256 verts */}
         <mesh>
-          <sphereGeometry args={[2.1, 24, 24]} />
+          <sphereGeometry args={[2.1, 16, 16]} />
           <meshPhongMaterial
             color="#111"
             transparent
-            opacity={viewMode === "WIRE" ? 0.2 : 0.05}
+            opacity={viewMode === "WIRE" ? 0.2 : 0.03}
             wireframe={viewMode === "WIRE"}
-            side={THREE.DoubleSide}
+            side={THREE.FrontSide}
+            flatShading
           />
         </mesh>
 
@@ -270,29 +268,16 @@ function MedicalMesh({
           </points>
         )}
 
-        {/* Tumor marker – Float & inline pointLight removed (per-frame physics + dynamic light) */}
+        {/* Ultra-light marker: 1 mesh only */}
         {active && result?.coords && (
-          <group position={[result.coords.x, result.coords.y, result.coords.z]}>
-            <mesh>
-              <sphereGeometry args={[0.3, 16, 16]} />
-              <meshStandardMaterial
-                color={result.severity === 'CRITICAL' ? "#ff0000" : "#ffaa00"}
-                emissive={result.severity === 'CRITICAL' ? "#ff0000" : "#ffaa00"}
-                emissiveIntensity={3}
-                transparent
-                opacity={0.9}
-              />
-            </mesh>
-            <mesh>
-              <sphereGeometry args={[0.52, 14, 14]} />
-              <meshBasicMaterial
-                color={result.severity === 'CRITICAL' ? "#ff5d5d" : "#ffcb5c"}
-                transparent
-                opacity={0.17}
-                side={THREE.BackSide}
-              />
-            </mesh>
-          </group>
+          <mesh position={[result.coords.x, result.coords.y, result.coords.z]}>
+            <sphereGeometry args={[0.35, 12, 12]} />
+            <meshBasicMaterial
+              color={result.severity === 'CRITICAL' ? "#ff3333" : "#ffaa00"}
+              transparent
+              opacity={0.8}
+            />
+          </mesh>
         )}
 
       </group>

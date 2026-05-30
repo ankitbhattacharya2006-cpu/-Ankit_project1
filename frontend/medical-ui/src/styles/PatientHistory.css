@@ -1,0 +1,145 @@
+.patient-history {
+  background: #f5f7fa;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.ph-header {
+  background: white;
+  padding: 15px;
+  border-radius: 6px;
+  border-left: 4px solid #4ea8ff;
+  margin-bottom: 15px;
+}
+
+.ph-header h2 {
+  margin: 0 0 10px 0;
+  font-size: 1.4em;
+}
+
+.ph-stats {
+  display: flex;
+  gap: 15px;
+  font-size: 0.9em;
+  margin-bottom: 10px;
+}
+
+.ph-btn-add {
+  background: #4ea8ff;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-bottom: 15px;
+}
+
+.ph-btn-add:hover {
+  background: #3d8ad6;
+}
+
+.ph-form {
+  background: white;
+  padding: 15px;
+  border-radius: 6px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.ph-form input,
+.ph-form select {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.ph-btn-submit {
+  background: #2ecc71;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.ph-btn-submit:hover {
+  background: #27ae60;
+}
+
+.ph-records {
+  display: grid;
+  gap: 10px;
+}
+
+.ph-record {
+  background: white;
+  padding: 12px;
+  border-radius: 4px;
+  border-left: 4px solid #4ea8ff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ph-record.ph-critical {
+  border-left-color: #ff2f2f;
+  background: #fff5f5;
+}
+
+.ph-record.ph-moderate {
+  border-left-color: #ff9a2a;
+  background: #fffbf0;
+}
+
+.ph-record span {
+  font-weight: bold;
+  background: #f0f0f0;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 0.8em;
+}
+
+.ph-record small {
+  color: #999;
+  font-size: 0.8em;
+}
+
+.ph-pagination {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.ph-pagination button {
+  padding: 8px 12px;
+  background: #4ea8ff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ph-pagination button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.ph-loading,
+.ph-error {
+  padding: 20px;
+  text-align: center;
+  font-size: 1.1em;
+}
+
+.ph-error {
+  background: #ffe0e0;
+  color: #cc0000;
+  border-radius: 4px;
+}

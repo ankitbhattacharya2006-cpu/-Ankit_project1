@@ -25,6 +25,19 @@ from math import radians, sin, cos, atan2, sqrt, exp
 import logging
 from cryptography.fernet import Fernet
 from passlib.context import CryptContext
+import json
+
+# Database imports
+try:
+    from .database import (
+        init_db, SessionLocal,
+        User, Patient, MedicalRecord, LoginAudit, AnalysisResult,
+    )
+except ImportError:
+    from database import (
+        init_db, SessionLocal,
+        User, Patient, MedicalRecord, LoginAudit, AnalysisResult,
+    )
 
 if os.name == "nt":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -93,6 +106,16 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# --- DATABASE INITIALIZATION ---
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    try:
+        init_db()
+        logger.info("✓ Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
 
 # --- DATASET REGISTRY & METADATA ---
 DATASET_MAP = {
@@ -281,7 +304,7 @@ def verify_csrf_token(user: Dict[str, str], csrf_header: Optional[str]) -> None:
 
 
 def check_and_update_lockout(username: str, login_success: bool) -> None:
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     entry = FAILED_LOGIN_ATTEMPTS.get(username)
     if login_success:
         FAILED_LOGIN_ATTEMPTS.pop(username, None)
@@ -1013,67 +1036,149 @@ async def auth_signup(payload: AuthSignupRequest):
         raise HTTPException(status_code=422, detail=str(error))
 
     validate_password_strength(payload.password or "")
-    if username in users_db:
-        raise HTTPException(status_code=409, detail="USERNAME_ALREADY_EXISTS")
+    
+    db = SessionLocal()
+    try:
+        existing_user = db.query(User).filter(User.username == username).first()
+        if existing_user:
+            raise HTTPException(status_code=409, detail="USERNAME_ALREADY_EXISTS")
 
-    role = normalize_role(payload.role)
-    invite_code = (payload.admin_invite_code or "").strip()
-    if role == "hospital_admin" and (not HOSPITAL_ADMIN_INVITE_CODE or invite_code != HOSPITAL_ADMIN_INVITE_CODE):
-        raise HTTPException(status_code=403, detail="HOSPITAL_ADMIN_INVITE_REQUIRED")
-    if role == "system_admin" and (not SYSTEM_ADMIN_INVITE_CODE or invite_code != SYSTEM_ADMIN_INVITE_CODE):
-        raise HTTPException(status_code=403, detail="SYSTEM_ADMIN_INVITE_REQUIRED")
+        role = normalize_role(payload.role)
+        invite_code = (payload.admin_invite_code or "").strip()
+        if role == "hospital_admin" and (not HOSPITAL_ADMIN_INVITE_CODE or invite_code != HOSPITAL_ADMIN_INVITE_CODE):
+            raise HTTPException(status_code=403, detail="HOSPITAL_ADMIN_INVITE_REQUIRED")
+        if role == "system_admin" and (not SYSTEM_ADMIN_INVITE_CODE or invite_code != SYSTEM_ADMIN_INVITE_CODE):
+            raise HTTPException(status_code=403, detail="SYSTEM_ADMIN_INVITE_REQUIRED")
 
-    users_db[username] = {
-        "password_hash": pwd_context.hash(payload.password),
-        "role": role,
-        "created_at": current_timestamp(),
-    }
-    security_logger.logger.info(f"[AUTH_SIGNUP] username={username} role={role}")
-    token_data = issue_access_token(username, role)
-    return {
-        "status": "SIGNED_UP",
-        "token": token_data["token"],
-        "csrf_token": token_data["csrf_token"],
-        "expires_at": token_data["expires_at"],
-        "username": username,
-        "role": role,
-    }
+        # Create user in database
+        new_user = User(
+            username=username,
+            hashed_password=pwd_context.hash(payload.password),
+            role=role,
+            is_active=True,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        # Also keep in memory for backward compatibility
+        users_db[username] = {
+            "password_hash": pwd_context.hash(payload.password),
+            "role": role,
+            "created_at": current_timestamp(),
+        }
+        
+        security_logger.logger.info(f"[AUTH_SIGNUP] username={username} role={role} user_id={new_user.id}")
+        token_data = issue_access_token(username, role)
+        
+        return {
+            "status": "SIGNED_UP",
+            "token": token_data["token"],
+            "csrf_token": token_data["csrf_token"],
+            "expires_at": token_data["expires_at"],
+            "username": username,
+            "role": role,
+            "user_id": new_user.id,
+        }
+    finally:
+        db.close()
 
 
 @app.post("/auth/login")
-async def auth_login(payload: AuthLoginRequest):
+async def auth_login(
+    payload: AuthLoginRequest,
+    x_forwarded_for: Optional[str] = Header(None),
+    user_agent: Optional[str] = Header(None),
+):
     try:
         username = validate_username(payload.username)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
 
-    user = users_db.get(username)
-    if not user:
-        security_logger.log_suspicious_activity(f"LOGIN_FAILED_UNKNOWN_USER username={username}")
-        check_and_update_lockout(username, login_success=False)
-        raise HTTPException(status_code=401, detail="INVALID_CREDENTIALS")
+    ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else "unknown"
+    
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            security_logger.log_suspicious_activity(f"LOGIN_FAILED_UNKNOWN_USER username={username}")
+            check_and_update_lockout(username, login_success=False)
+            # Record failed login
+            try:
+                audit = LoginAudit(
+                    user_id=None,
+                    ip_address=ip_address,
+                    user_agent=user_agent or "",
+                    status="failed",
+                    failure_reason="user_not_found",
+                )
+                db.add(audit)
+                db.commit()
+            except:
+                pass
+            raise HTTPException(status_code=401, detail="INVALID_CREDENTIALS")
 
-    lock_entry = FAILED_LOGIN_ATTEMPTS.get(username)
-    if lock_entry and lock_entry.get("locked_until") and datetime.datetime.utcnow() < lock_entry["locked_until"]:
-        check_and_update_lockout(username, login_success=False)
+        lock_entry = FAILED_LOGIN_ATTEMPTS.get(username)
+        if lock_entry and lock_entry.get("locked_until") and datetime.datetime.now(datetime.timezone.utc) < lock_entry["locked_until"]:
+            check_and_update_lockout(username, login_success=False)
+            raise HTTPException(status_code=423, detail="ACCOUNT_LOCKED")
 
-    if not pwd_context.verify(payload.password, user["password_hash"]):
-        security_logger.log_suspicious_activity(f"LOGIN_FAILED_BAD_PASSWORD username={username}")
-        check_and_update_lockout(username, login_success=False)
-        raise HTTPException(status_code=401, detail="INVALID_CREDENTIALS")
+        if not pwd_context.verify(payload.password, user.hashed_password):
+            security_logger.log_suspicious_activity(f"LOGIN_FAILED_BAD_PASSWORD username={username}")
+            check_and_update_lockout(username, login_success=False)
+            
+            # Record failed login attempt
+            try:
+                audit = LoginAudit(
+                    user_id=user.id,
+                    ip_address=ip_address,
+                    user_agent=user_agent or "",
+                    status="failed",
+                    failure_reason="incorrect_password",
+                )
+                db.add(audit)
+                db.commit()
+            except:
+                pass
+            
+            raise HTTPException(status_code=401, detail="INVALID_CREDENTIALS")
 
-    check_and_update_lockout(username, login_success=True)
-    role = user.get("role", "patient")
-    security_logger.logger.info(f"[AUTH_LOGIN] username={username} role={role}")
-    token_data = issue_access_token(username, role)
-    return {
-        "status": "LOGGED_IN",
-        "token": token_data["token"],
-        "csrf_token": token_data["csrf_token"],
-        "expires_at": token_data["expires_at"],
-        "username": username,
-        "role": role,
-    }
+        check_and_update_lockout(username, login_success=True)
+        role = user.role or "patient"
+        
+        # Update last login
+        user.last_login = datetime.datetime.now(datetime.timezone.utc)
+        user.last_ip = ip_address
+        db.commit()
+        
+        # Record successful login
+        try:
+            audit = LoginAudit(
+                user_id=user.id,
+                ip_address=ip_address,
+                user_agent=user_agent or "",
+                status="success",
+            )
+            db.add(audit)
+            db.commit()
+        except:
+            pass
+        
+        security_logger.logger.info(f"[AUTH_LOGIN] username={username} role={role} ip={ip_address}")
+        token_data = issue_access_token(username, role)
+        
+        return {
+            "status": "LOGGED_IN",
+            "token": token_data["token"],
+            "csrf_token": token_data["csrf_token"],
+            "expires_at": token_data["expires_at"],
+            "username": username,
+            "role": role,
+            "user_id": user.id,
+        }
+    finally:
+        db.close()
 
 
 @app.get("/auth/me")
@@ -1179,6 +1284,63 @@ async def process_scan(
     secured_record["residence"] = encrypt_sensitive(secured_record["residence"])
     secured_record["owner_user"] = username
     patients_db.append(secured_record)
+    
+    # Store in database for persistence & audit trail
+    db = SessionLocal()
+    try:
+        # Create or update patient
+        patient_data = {
+            "patient_id": finding.subject_id,
+            "patient_name": clean_name,
+            "bed_number": clean_bed,
+            "residence": clean_residence,
+        }
+        existing_patient = db.query(Patient).filter(Patient.patient_id == finding.subject_id).first()
+        if existing_patient:
+            existing_patient.patient_name = clean_name
+            existing_patient.bed_number = clean_bed
+            existing_patient.residence = clean_residence
+            existing_patient.updated_at = datetime.datetime.now(datetime.timezone.utc)
+            db.commit()
+            patient_id = existing_patient.id
+        else:
+            new_patient = Patient(
+                patient_id=finding.subject_id,
+                patient_name=clean_name,
+                bed_number=clean_bed,
+                residence=clean_residence,
+                created_at=datetime.datetime.now(datetime.timezone.utc),
+                updated_at=datetime.datetime.now(datetime.timezone.utc),
+            )
+            db.add(new_patient)
+            db.commit()
+            db.refresh(new_patient)
+            patient_id = new_patient.id
+        
+        # Store analysis result
+        analysis = AnalysisResult(
+            patient_id=patient_id,
+            analysis_id=finding.subject_id,
+            dataset_context=finding.dataset_context,
+            prediction=finding.prediction,
+            confidence=finding.confidence,
+            volume=finding.volume,
+            diameter=finding.diameter,
+            severity=finding.severity,
+            dice_score=finding.dice_score,
+            detailed_report=json.dumps(finding.detailed_report),
+            voxels_data=json.dumps(finding.voxels),
+            coords=json.dumps(finding.coords),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+        db.add(analysis)
+        db.commit()
+        logger.info(f"Analysis result stored: patient_id={finding.subject_id}, severity={finding.severity}")
+    except Exception as e:
+        logger.error(f"Failed to store analysis result: {e}")
+    finally:
+        db.close()
+    
     return finding
 
 
@@ -1590,6 +1752,286 @@ async def book_bed(
             }
 
     raise HTTPException(status_code=404, detail="HOSPITAL_NOT_FOUND")
+
+
+# --- PATIENT HISTORY ENDPOINTS ---
+@app.get("/patient/{patient_id}")
+async def get_patient_details(
+    patient_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Get patient profile + statistics"""
+    user = get_authenticated_user(authorization)
+    db = SessionLocal()
+    try:
+        patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="PATIENT_NOT_FOUND")
+        
+        # Count records
+        total_records = db.query(MedicalRecord).filter(MedicalRecord.patient_id == patient.id).count()
+        critical_findings = db.query(AnalysisResult).filter(
+            AnalysisResult.patient_id == patient.id,
+            AnalysisResult.severity == "CRITICAL"
+        ).count()
+        total_analyses = db.query(AnalysisResult).filter(AnalysisResult.patient_id == patient.id).count()
+        
+        return {
+            "patient_id": patient.patient_id,
+            "patient_name": patient.patient_name,
+            "bed_number": patient.bed_number,
+            "residence": patient.residence,
+            "age": patient.age,
+            "gender": patient.gender,
+            "created_at": patient.created_at.isoformat() if patient.created_at else None,
+            "updated_at": patient.updated_at.isoformat() if patient.updated_at else None,
+            "statistics": {
+                "total_medical_records": total_records,
+                "critical_findings": critical_findings,
+                "total_analyses": total_analyses,
+            }
+        }
+    finally:
+        db.close()
+
+
+@app.get("/patient/{patient_id}/history")
+async def get_patient_history(
+    patient_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    authorization: Optional[str] = Header(None),
+):
+    """Get paginated medical record history"""
+    user = get_authenticated_user(authorization)
+    db = SessionLocal()
+    try:
+        patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="PATIENT_NOT_FOUND")
+        
+        # Get paginated records
+        query = db.query(MedicalRecord).filter(
+            MedicalRecord.patient_id == patient.id
+        ).order_by(MedicalRecord.record_date.desc())
+        
+        total = query.count()
+        records = query.offset(offset).limit(limit).all()
+        
+        return {
+            "patient_id": patient.patient_id,
+            "records": [
+                {
+                    "id": r.id,
+                    "record_type": r.record_type,
+                    "title": r.title,
+                    "organ": r.organ,
+                    "modality": r.modality,
+                    "severity": r.severity,
+                    "status": r.status,
+                    "findings": json.loads(r.findings) if r.findings else {},
+                    "record_date": r.record_date.isoformat() if r.record_date else None,
+                    "created_by": r.created_by,
+                }
+                for r in records
+            ],
+            "pagination": {
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "has_next": (offset + limit) < total,
+            }
+        }
+    finally:
+        db.close()
+
+
+@app.get("/patient/{patient_id}/analysis")
+async def get_patient_analysis(
+    patient_id: str,
+    limit: int = 20,
+    authorization: Optional[str] = Header(None),
+):
+    """Get AI analysis results for patient"""
+    user = get_authenticated_user(authorization)
+    db = SessionLocal()
+    try:
+        patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="PATIENT_NOT_FOUND")
+        
+        results = db.query(AnalysisResult).filter(
+            AnalysisResult.patient_id == patient.id
+        ).order_by(AnalysisResult.timestamp.desc()).limit(limit).all()
+        
+        return {
+            "patient_id": patient.patient_id,
+            "analysis_results": [
+                {
+                    "id": r.id,
+                    "analysis_id": r.analysis_id,
+                    "dataset_context": r.dataset_context,
+                    "prediction": r.prediction,
+                    "confidence": r.confidence,
+                    "volume": r.volume,
+                    "diameter": r.diameter,
+                    "severity": r.severity,
+                    "dice_score": r.dice_score,
+                    "detailed_report": json.loads(r.detailed_report) if r.detailed_report else [],
+                    "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+                }
+                for r in results
+            ]
+        }
+    finally:
+        db.close()
+
+
+class MedicalRecordRequest(BaseModel):
+    record_type: str
+    title: str
+    organ: str
+    modality: str
+    severity: str
+    findings: Optional[dict] = None
+
+
+@app.post("/patient/{patient_id}/record")
+async def add_medical_record(
+    patient_id: str,
+    payload: MedicalRecordRequest,
+    authorization: Optional[str] = Header(None),
+    x_csrf_token: Optional[str] = Header(None, alias="X-CSRF-Token"),
+):
+    """Add new medical record to patient history"""
+    user = get_authenticated_user(authorization)
+    verify_csrf_token(user, x_csrf_token)
+    require_role(user, {"hospital_admin", "system_admin"})
+    
+    db = SessionLocal()
+    try:
+        patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="PATIENT_NOT_FOUND")
+        
+        # Validate severity
+        if payload.severity not in {"NORMAL", "MODERATE", "CRITICAL"}:
+            raise HTTPException(status_code=422, detail="INVALID_SEVERITY")
+        
+        record = MedicalRecord(
+            patient_id=patient.id,
+            record_type=payload.record_type,
+            title=payload.title,
+            organ=payload.organ,
+            modality=payload.modality,
+            severity=payload.severity,
+            status="active",
+            findings=json.dumps(payload.findings or {}),
+            record_date=datetime.datetime.now(datetime.timezone.utc),
+            created_by=user["username"],
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        
+        logger.info(f"Medical record added: patient_id={patient_id}, type={payload.record_type}")
+        
+        return {
+            "status": "CREATED",
+            "record_id": record.id,
+            "patient_id": patient.patient_id,
+            "record_type": record.record_type,
+            "created_at": record.record_date.isoformat() if record.record_date else None,
+            "created_by": record.created_by,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/user/{username}/login-history")
+async def get_login_history(
+    username: str,
+    limit: int = 50,
+    authorization: Optional[str] = Header(None),
+):
+    """Get user's login audit trail (admin only)"""
+    user = get_authenticated_user(authorization)
+    require_role(user, {"system_admin"})
+    
+    db = SessionLocal()
+    try:
+        target_user = db.query(User).filter(User.username == username).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="USER_NOT_FOUND")
+        
+        audits = db.query(LoginAudit).filter(
+            LoginAudit.user_id == target_user.id
+        ).order_by(LoginAudit.login_time.desc()).limit(limit).all()
+        
+        return {
+            "username": username,
+            "user_id": target_user.id,
+            "login_history": [
+                {
+                    "id": a.id,
+                    "login_time": a.login_time.isoformat() if a.login_time else None,
+                    "ip_address": a.ip_address,
+                    "user_agent": a.user_agent,
+                    "status": a.status,
+                    "failure_reason": a.failure_reason,
+                }
+                for a in audits
+            ]
+        }
+    finally:
+        db.close()
+
+
+@app.get("/patients/critical")
+async def get_critical_patients(
+    limit: int = 50,
+    authorization: Optional[str] = Header(None),
+):
+    """Get all patients with critical findings across system"""
+    user = get_authenticated_user(authorization)
+    require_role(user, {"hospital_admin", "system_admin"})
+    
+    db = SessionLocal()
+    try:
+        # Query patients with critical analysis results
+        critical_analyses = db.query(AnalysisResult).filter(
+            AnalysisResult.severity == "CRITICAL"
+        ).order_by(AnalysisResult.timestamp.desc()).limit(limit).all()
+        
+        patient_ids = set(a.patient_id for a in critical_analyses)
+        patients = db.query(Patient).filter(Patient.id.in_(patient_ids)).all()
+        
+        patient_map = {p.id: p for p in patients}
+        
+        critical_list = []
+        for analysis in critical_analyses:
+            patient = patient_map.get(analysis.patient_id)
+            if patient:
+                critical_list.append({
+                    "patient_id": patient.patient_id,
+                    "patient_name": patient.patient_name,
+                    "bed_number": patient.bed_number,
+                    "residence": patient.residence,
+                    "severity": analysis.severity,
+                    "prediction": analysis.prediction,
+                    "confidence": analysis.confidence,
+                    "volume": analysis.volume,
+                    "diameter": analysis.diameter,
+                    "analysis_timestamp": analysis.timestamp.isoformat() if analysis.timestamp else None,
+                })
+        
+        return {
+            "status": "OK",
+            "total_critical": len(critical_list),
+            "critical_patients": critical_list,
+        }
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

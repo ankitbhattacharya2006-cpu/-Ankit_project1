@@ -1,0 +1,108 @@
+.patient-analysis {
+  background: #f5f7fa;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.patient-analysis h3 {
+  margin-top: 0;
+  font-size: 1.3em;
+}
+
+.pa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 15px;
+}
+
+.pa-card {
+  background: white;
+  border-radius: 6px;
+  padding: 15px;
+  border-left: 4px solid #4ea8ff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.pa-card.pa-critical {
+  border-left-color: #ff2f2f;
+  background: #fff5f5;
+}
+
+.pa-card.pa-moderate {
+  border-left-color: #ff9a2a;
+  background: #fffbf0;
+}
+
+.pa-card.pa-normal {
+  border-left-color: #2ecc71;
+  background: #f5fff5;
+}
+
+.pa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.pa-header h4 {
+  margin: 0;
+  font-size: 0.95em;
+}
+
+.pa-badge {
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  background: #f0f0f0;
+}
+
+.pa-content {
+  font-size: 0.9em;
+  margin-bottom: 10px;
+}
+
+.pa-content p {
+  margin: 5px 0;
+}
+
+.pa-content strong {
+  color: #333;
+}
+
+.pa-report {
+  background: #fafafa;
+  padding: 8px;
+  border-radius: 3px;
+  font-size: 0.85em;
+  margin-bottom: 10px;
+  border-left: 2px solid #999;
+}
+
+.pa-report p {
+  margin: 3px 0;
+  color: #555;
+}
+
+.pa-card small {
+  color: #999;
+  font-size: 0.8em;
+}
+
+.pa-loading,
+.pa-error {
+  padding: 20px;
+  text-align: center;
+  font-size: 1.1em;
+}
+
+.pa-error {
+  background: #ffe0e0;
+  color: #cc0000;
+  border-radius: 4px;
+}

@@ -1,0 +1,177 @@
+.admin-dashboard {
+  background: #f5f7fa;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.admin-dashboard h2 {
+  margin-top: 0;
+  font-size: 1.5em;
+  color: #333;
+}
+
+.ad-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #ddd;
+}
+
+.ad-tab {
+  background: transparent;
+  border: none;
+  padding: 10px 15px;
+  cursor: pointer;
+  font-weight: bold;
+  color: #666;
+  border-bottom: 3px solid transparent;
+}
+
+.ad-tab.active {
+  color: #4ea8ff;
+  border-bottom-color: #4ea8ff;
+}
+
+.ad-tab:hover {
+  color: #4ea8ff;
+}
+
+.ad-section {
+  background: white;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.ad-input {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.95em;
+  width: 300px;
+  margin-right: 10px;
+}
+
+.ad-btn {
+  background: #4ea8ff;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-bottom: 15px;
+}
+
+.ad-btn:hover {
+  background: #3d8ad6;
+}
+
+.ad-table {
+  overflow-x: auto;
+}
+
+.ad-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.ad-table th,
+.ad-table td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.ad-table th {
+  background: #f0f0f0;
+  font-weight: bold;
+}
+
+.ad-table tr.ad-success {
+  background: #f5fff5;
+}
+
+.ad-table tr.ad-failed {
+  background: #fff5f5;
+}
+
+.ad-badge {
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-weight: bold;
+  font-size: 0.8em;
+}
+
+.ad-badge.ad-success {
+  background: #d4f1d4;
+  color: #2ecc71;
+}
+
+.ad-badge.ad-failed {
+  background: #f1d4d4;
+  color: #ff2f2f;
+}
+
+.ad-ua {
+  color: #999;
+  font-size: 0.85em;
+  font-family: monospace;
+}
+
+.ad-critical {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 15px;
+}
+
+.ad-critical-card {
+  background: #fff5f5;
+  border-left: 4px solid #ff2f2f;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.adc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #ffcccc;
+  padding-bottom: 10px;
+}
+
+.adc-header h4 {
+  margin: 0;
+  font-size: 0.95em;
+}
+
+.adc-critical {
+  background: #ff2f2f;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-weight: bold;
+  font-size: 0.8em;
+}
+
+.ad-critical-card p {
+  margin: 5px 0;
+  font-size: 0.9em;
+}
+
+.ad-critical-card small {
+  color: #999;
+  font-size: 0.8em;
+}
+
+.ad-error {
+  background: #ffe0e0;
+  color: #cc0000;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  font-weight: bold;
+}

@@ -58,16 +58,23 @@ def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
 
 def main():
     print("\n--- 🏥 FEDERATED SERVER: STARTING ---")
+    
+    # Get port from environment or use default 8081 (avoid conflicts with 8080)
+    fed_port = os.getenv("FED_SERVER_PORT", "8081")
+    server_address = f"0.0.0.0:{fed_port}"
+    
     strategy = fl.server.strategy.FedAvg(
         min_available_clients=1,
         evaluate_metrics_aggregation_fn=weighted_average,
     )
 
+    print(f"[FED_SERVER] Listening on {server_address}")
+    
     # Use a while loop so it stays open
     while True:
         try:
             fl.server.start_server(
-                server_address="0.0.0.0:8080",
+                server_address=server_address,
                 config=fl.server.ServerConfig(num_rounds=1000), 
                 strategy=strategy,
             )

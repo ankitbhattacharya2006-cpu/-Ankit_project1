@@ -26,3 +26,7 @@ cryptography>=42,<46
 # Auth and password hashing
 PyJWT>=2.9,<3
 passlib[bcrypt]>=1.7,<2
+
+# Database & ORM
+sqlalchemy>=2.0,<3
+psycopg2-binary>=2.9,<3
