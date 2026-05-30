@@ -45,28 +45,28 @@ function MedicalMesh({
   const themePalette = useMemo(() => {
     if (severityTheme === 'critical') {
       return {
-        organ: '#6fb8ff',
-        tumor: '#ff2f2f',
-        ambient: '#ffe0e0',
-        key: '#ffd3d3',
-        fill: '#ffbda8',
+        organ: '#1565c0',
+        tumor: '#d32f2f',
+        ambient: '#ffebee',
+        key: '#ef9a9a',
+        fill: '#ffcdd2',
       };
     }
     if (severityTheme === 'moderate') {
       return {
-        organ: '#69bfff',
-        tumor: '#ff9a2a',
-        ambient: '#ffeed6',
-        key: '#d6e5ff',
-        fill: '#ffd2ad',
+        organ: '#1976d2',
+        tumor: '#f57c00',
+        ambient: '#fff3e0',
+        key: '#ff9800',
+        fill: '#ffe0b2',
       };
     }
     return {
-      organ: '#4ea8ff',
-      tumor: '#ff3300',
-      ambient: '#c6dcff',
-      key: '#cfe0ff',
-      fill: '#ffccb3',
+      organ: '#0d47a1',
+      tumor: '#ef5350',
+      ambient: '#e3f2fd',
+      key: '#42a5f5',
+      fill: '#bbdefb',
     };
   }, [severityTheme]);
 
@@ -231,9 +231,9 @@ function MedicalMesh({
         <mesh>
           <sphereGeometry args={[2.1, 16, 16]} />
           <meshPhongMaterial
-            color="#111"
+            color="#e0e0e0"
             transparent
-            opacity={viewMode === "WIRE" ? 0.2 : 0.03}
+            opacity={viewMode === "WIRE" ? 0.25 : 0.05}
             wireframe={viewMode === "WIRE"}
             side={THREE.FrontSide}
             flatShading
@@ -273,9 +273,9 @@ function MedicalMesh({
           <mesh position={[result.coords.x, result.coords.y, result.coords.z]}>
             <sphereGeometry args={[0.35, 12, 12]} />
             <meshBasicMaterial
-              color={result.severity === 'CRITICAL' ? "#ff3333" : "#ffaa00"}
+              color={result.severity === 'CRITICAL' ? "#d32f2f" : "#f57c00"}
               transparent
-              opacity={0.8}
+              opacity={0.9}
             />
           </mesh>
         )}

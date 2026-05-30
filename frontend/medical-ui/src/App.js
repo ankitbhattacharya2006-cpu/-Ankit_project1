@@ -3,12 +3,14 @@ import { Canvas } from '@react-three/fiber';
 import jsPDF from 'jspdf';
 import 'leaflet/dist/leaflet.css';
 import './App.css';
+import './styles/ProfessionalPolish.css';
 import MedicalMesh from './MedicalMesh';
 import FrontendSecurity from './security';
 import LocationSelector from './components/LocationSelector';
 import HospitalMap from './components/HospitalMap';
 import ResultsTable from './components/ResultsTable';
 import SummaryCard from './components/SummaryCard';
+import IntroAnimation from './components/IntroAnimation';
 import LOCATION_HIERARCHY from './data/locationHierarchy.json';
 
 const resolveDefaultApiBaseUrl = () => {
@@ -1752,6 +1754,18 @@ function App() {
 
     return 'auth';
   }, [authToken, isAppBooting, landingStep]);
+
+  // Show the high-fidelity intro animation on app boot
+  if (isAppBooting && bootMode) {
+    return (
+      <IntroAnimation
+        onComplete={() => {
+          setIsAppBooting(false);
+          setBootProgress(100);
+        }}
+      />
+    );
+  }
 
   if (!department) return (
     <div className={`portal-master-container ${darkMode ? 'theme-dark' : 'theme-light'} ${largeTextMode ? 'large-text-mode' : ''} ${compactMode ? 'compact-mode' : ''}`}>
